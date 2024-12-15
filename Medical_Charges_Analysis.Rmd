@@ -1,0 +1,331 @@
+---
+title: "The Price of Health"
+subtitle: "Multiple Linear Regression Analysis of Medical Charges Based on Insurance Data"
+author: "Wenxin Wang, Lingzhi Pan, Xinrui Wang, Zihan Geng, Chen Yang"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(mctest)
+library(lmtest)
+library(ggplot2)
+library(GGally)
+library(olsrr)
+```
+
+# Dataset
+
+```{r echo=TRUE}
+df <- read.csv('insurance.csv')
+```
+
+```{r echo=TRUE}
+df$child <- rep(1, 1338)
+df$child[df$children==0] <- 0
+attach(df)
+```
+
+# Model
+
+## Additive model
+
+Firstly, we will find the additive model which the model only contain the main effects. We first fit the fullmodel and observe the analysis results.
+
+```{r echo=TRUE}
+model1 <- lm(charges~age+factor(sex)+bmi+factor(child)+factor(smoker)+factor(region))
+stepmod=ols_step_both_p(model1,p_enter = 0.05, p_remove = 0.1, details=TRUE)
+summary(stepmod$model)
+```
+From the output, we can see the model applied Stepwise Regression Procedure with p_enter=0.05 and p_remove=0.1 is:\
+
+$$
+\hat{y}=-12149.61+23810.76x_{smoker}+257.94x_{age}+321.73x_{bmi}+990.74x_{child}
+$$
+
+We will show the screening process of variables throughout the model:\
+
+
+```{r echo=TRUE}
+summary(model1)
+```
+
+From this output, independent variable sex has $t_{cal}=-0.379$ and $p-value=0.70456>0.05$. We can not reject $H_0:\beta_{sex}=0$. We can consider that sex has no influence on insurance charges. We can delete it. Dummy variable region_northwest has $t_{cal}=-0.739$ and $p-value=0.46029>0.05$. We can not reject $H_0:\beta_{region_northwest}=0$. But other region dummy variables have $p-value<0.05$. So we keep the region variable. We can get a reduce model:
+
+```{r echo=TRUE}
+model1_reduce <- lm(charges~age+bmi+factor(child)+factor(smoker)+factor(region))
+summary(model1_reduce)
+```
+
+From this output, only dummy variable region_northwest has $t_{cal}=-0.737$ and $p-value=0.4611>0.05$. Other variables have $p-value<0.05$.\
+We can try to delete region variable and use ANOVA to test the model before and after deletion.
+
+```{r echo=TRUE}
+model1_nonregion <- lm(charges~age+bmi+factor(child)+factor(smoker))
+summary(model1_nonregion)
+```
+
+After deleting the region variable, the R2 and RSE of the model do not change significantly. We used ANOVA to compare the two models:
+
+```{r echo=TRUE}
+anova(model1_nonregion, model1_reduce)
+```
+
+| Source     | SS                     | df   | MS       | F      | p-value |
+|------------|------------------------|------|----------|--------|---------|
+| Regression | $236131249$            | 3    | 78710416 | 2.1383 | 0.09361 |
+| Residual   | $4.8956\times 10^{10}$ | 1330 | 36809023 |        |         |
+| Total      | $4.9192\times 10^{10}$ | 1333 |          |        |         |
+
+From the ANOVA output, $F_{cal}=2.1383$ with $df=3,1330$ and $p-value=0.09361$. We can not reject $H_0:\beta_{region}=0$. We can consider region has no influence on insurance charges. We can delete region variable. Therefore, we can consider that age, bmi, child and smoker have significantly influence on insurance charges.\
+
+```{r echo=TRUE}
+summary(model1_nonregion)
+```
+
+The final additive model is:\
+$$
+\hat{y}=-12149.61+257.94x_{age}+321.73x_{bmi}+990.74x_{child}+23810.76x_{smoker}
+$$
+
+where $y$ is insurance charges;\
+$x_{age}$ is the individual's age;\
+$x_{bmi}$ is the body mass index;\
+$x_{child}$ is a dummy variable. $x_{child}=1$ is have children; $x_{child}=0$ is no children;\
+$x_{smoker}$ is a dummy variable. $x_{smoker}=1$ is smoker; $x_{smoker}=0$ is non-smoker;\
+
+After we find the final additive model, we will check the multicollinearity.
+
+```{r echo=TRUE}
+imcdiag(model1_nonregion, method="VIF")
+```
+
+All VIFs are close to 1, which means that there is very weak multicollinearity, but it is not severe enough to warrant corrective measures. Therefore, for these main effects we do not need to consider the multicollinearity.\
+
+## Interaction Model
+
+After we find the additive model and main effects, we consider add some interaction terms into model. First, we add all the interaction variables and observe their significance.
+
+```{r echo=TRUE}
+model_in <- lm(charges~(age+bmi+factor(child)+factor(smoker))^2)
+summary(model_in)
+```
+
+From the output, only the interaction term $bmi\times smoker$ has $t_{cal}=26.953$ and $p-value<0.05$. We can reject $H_0:\beta_{bmi\times smoker}=0$. We can consider the interaction term $bmi\times smoker$ has significantly influence on insurance charges. After delete other interaction terms, the reduce interaction model is:\
+
+```{r echo=TRUE}
+model_in1 <- lm(charges ~ age+bmi+factor(child)+factor(smoker)+bmi*factor(smoker))
+summary(model_in1)
+```
+
+From this output about reduce interaction model, all the interaction term is significant.We can compare the $R^2_{adj}$ and RSE between additive and interaction model.
+
+```{r echo=TRUE}
+data.frame(Model = c( "additive", "interaction"),
+           AdjRsq=c(summary(model1_nonregion)$adj.r.squared,summary(model_in1)$adj.r.squared),
+           RSE=c(summary(model1_nonregion)$sigma,summary(model_in1)$sigma))
+```
+
+The interaction model has a greater $R^2_{adj}=0.8372067$, and smaller \$RSE=4886.105 \$. We prefer the interaction model. We also compare the additive and interaction models by ANOVA.
+
+```{r echo=TRUE}
+anova(model1_nonregion, model_in1)
+```
+
+| Source     | SS                     | df   | MS                     | F      | p-value |
+|------------|------------|------------|------------|------------|------------|
+| Regression | $1.7392\times 10^{10}$ | 1    | $1.7392\times 10^{10}$ | 728.49 | 0       |
+| Residual   | $3.18\times 10^{10}$   | 1332 | $2.3874\times10^{7}$   |        |         |
+| Total      | $4.9192\times 10^{10}$ | 1333 |                        |        |         |
+
+From ANOVA table, $F_{cal}=728.49$ with $df=1,1332$ and $p-value<0.05$. We can reject $H_0:\beta_{bmi\times smoker}=0$. Therefore, interaction model is better to fit insurance charges which is:\
+$$
+\hat{y}=-2753.520+265.192x_{age}+6.423x_{bmi}+960.640x_{child}-20082.183x_{smoker}+1430.143x_{bmi}x_{smoker}
+$$
+
+where $y$ is insurance charges;\
+$x_{age}$ is the individual's age;\
+$x_{bmi}$ is the body mass index;\
+$x_{child}$ is a dummy variable. $x_{child}=1$ is have children; $x_{child}=0$ is no children;\
+$x_{smoker}$ is a dummy variable. $x_{smoker}=1$ is smoker; $x_{smoker}=0$ is non-smoker;\
+
+## Assumption
+
+After we find the best fit model, we need to check the assumptions for model. First, we check the linearity assumption:
+
+```{r echo=TRUE}
+ggplot(model_in1, aes(x=.fitted, y=.resid)) +
+  geom_point() +geom_smooth()+xlim(0,60000)
+  geom_hline(yintercept = 0) 
+
+```
+
+There seems to be some sort of pattern happening with our residuals. So we will use 'ggpairs' draw scatter plots and see if there are higher-order variables.
+
+```{r echo=TRUE}
+df1 <- df[c('charges','age','bmi','child','smoker')]
+ggpairs(df1,lower = list(continuous = "smooth_loess", combo =
+  "facethist", discrete = "facetbar", na = "na"))
+```
+
+From the scatter plots, the relationship between age and charges looks like it might be quadratic or something higher. At the same time, the relationship between bmi and charges looks like it might be quadratic or something higher. We try to add a higher-order variable of age:
+
+```{r echo=TRUE}
+model_age2 <- lm(charges~age+I(age^2)+bmi+factor(child)+factor(smoker)+bmi*factor(smoker))
+summary(model_age2)
+model_age3 <- lm(charges~age+I(age^2)+I(age^3)+bmi+factor(child)+factor(smoker)+bmi*factor(smoker))
+summary(model_age3)
+
+data.frame(Model = c( "age", "age2", "age3"),
+           AdjRsq=c(summary(model_in1)$adj.r.squared,summary(model_age2)$adj.r.squared,summary(model_age3)$adj.r.squared),
+           RSE=c(summary(model_in1)$sigma,summary(model_age2)$sigma,summary(model_age3)$sigma))
+```
+
+After we add $x_{age}^2$ into the interaction model, the $R^2_{adj}$ increase from 0.8372067 to 0.8397518 and the RSE decrease from 4886.105 to 4847.760 . But when we add the $x_{age}^3$, the $R^2_{adj}$ of the model reduce to 0.8396350 and the RSE is increased to 4849.527. The$p-value$ of $x_{age}^2$ is smaller than 0.05 which is significant. Therefore, we decide to add $x_{age}^2$ into interaction model.\
+Then, we try to add a higher-order variable of bmi:
+
+```{r echo=TRUE}
+model_bmi2 <- lm(charges~age+I(age^2)+bmi+I(bmi^2)+factor(child)+factor(smoker)+bmi*factor(smoker))
+summary(model_bmi2)
+model_bmi3 <- lm(charges~age+I(age^2)+bmi+I(bmi^2)+I(bmi^3)+factor(child)+factor(smoker)+bmi*factor(smoker))
+summary(model_bmi3)
+model_bmi4 <- lm(charges~age+I(age^2)+bmi+I(bmi^2)+I(bmi^3)+I(bmi^4)+factor(child)+factor(smoker)+bmi*factor(smoker))
+summary(model_bmi4)
+```
+
+We try to add $x_{bmi}^2$, $x_{bmi}^3$, $x_{bmi}^4$ into model. The $R^2_{adj}$ and RSE about these model are below:
+
+```{r echo=TRUE}
+data.frame(Model = c( "bmi", "bmi2", "bmi3", "bmi4"),
+           AdjRsq=c(summary(model_age2)$adj.r.squared,
+                    summary(model_bmi2)$adj.r.squared,
+                    summary(model_bmi3)$adj.r.squared,
+                    summary(model_bmi4)$adj.r.squared),
+           RSE=c(summary(model_age2)$sigma,summary(model_bmi2)$sigma,
+                 summary(model_bmi3)$sigma,summary(model_bmi4)$sigma))
+```
+
+From the table above, we can find that $R^2_{adj}$ and RSE become smaller as the order of bmi increases, and the smallest \$R\^2\_{adj}=0.8431882 \$ and $RSE=4795.5$ are founded when we add $x_{bmi}^4$. But the $p-value$ of $x_{bmi}^4$ is greater than 0.05 which is not significant. Therefore, we decide to add $x_{bmi}^2$ and $x_{bmi}^2$ into model. The final model after adding high-order variables is as follows:\
+$$
+\begin{aligned}
+\hat{y}=27770-42.73x_{age}+3.853x_{age}^2-2788x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3+1490x_{child}-20320x_{smoker}+1439x_{bmi}x_{smoker}
+\end{aligned}
+$$ where $y$ is insurance charges;\
+$x_{age}$ is the individual's age;\
+$x_{bmi}$ is the body mass index;\
+$x_{child}$ is a dummy variable. $x_{child}=1$ is have children; $x_{child}=0$ is no children;\
+$x_{smoker}$ is a dummy variable. $x_{smoker}=1$ is smoker; $x_{smoker}=0$ is non-smoker;\
+
+```{r echo=TRUE}
+ggplot(model_bmi3, aes(x=.fitted, y=.resid)) +
+  geom_point() + geom_smooth()+xlim(0,60000)
+  geom_hline(yintercept = 0) 
+
+```
+
+It looks a little smoother than it did before we increased the higher order.\
+After adding higher-order variables, we test this model for homogeneity of variance and normality assumptions. We use Breusch-Pagan test to test equal variance assumption:\
+$H_0:$heteroscedasticity is not present\
+$H_1:$heteroscedasticity is present
+
+```{r echo=TRUE}
+bptest(model_bmi3)
+```
+
+From the output, $p-value=0.3025>0.05$, we can not reject $H_0$. Therefore, we can conclude that this model does meet the equal variance assumption.\
+Then, we draw qqplot and use Shapiro-Wilk test (S-W) to test the normality assumption: $H_0:$the sample data are significantly normally distributed $H_1:$the sample data are not significantly normally distributed
+
+```{r echo=TRUE}
+ggplot(df, aes(sample=model_bmi3$residuals)) +
+  stat_qq() +
+  stat_qq_line()
+shapiro.test(residuals(model_bmi3))
+```
+
+From the output, the residual data do not have normal distribution. $p-value=0.05$. We can reject $H_0$. We do not have normality.\
+We can find the outlier points by Cooks distance:
+
+```{r echo=TRUE}
+plot(model_bmi3,which=5)
+plot(model_bmi3,pch=18,col="red",which=c(4))
+```
+
+From the plots above, we can see that data point 129, 1048 and 1318 have a larger cook's distance than other points but smaller than 0.5 and all cases are well inside of the Cook’s distance lines. Therefore, there is no influential case. Then, we can find the Leverage points
+
+```{r echo=TRUE}
+lev=hatvalues(model_bmi3)
+p = length(coef(model_bmi3))
+n = nrow(df)
+outlier2p = lev[lev>(2*p/n)]
+outlier3p = lev[lev>(3*p/n)]
+print("h_I>3p/n, outliers are")
+print(outlier3p)
+```
+
+```{r echo=TRUE}
+plot(rownames(df),lev, main = "Leverage in Advertising Dataset", xlab="observation",
+    ylab = "Leverage Value")
+abline(h = 2 *p/n, lty = 1)
+abline(h = 3 *p/n, lty = 1)
+```
+
+There are 41 leverage values.
+
+### Final model
+
+Our final model is:
+
+```{r echo=TRUE}
+summary(model_bmi3)
+```
+
+$$
+\hat{y}=27770-42.73x_{age}+3.853x_{age}^2-2788x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3+1490x_{child}-20320x_{smoker}+1439x_{bmi}x_{smoker}
+$$ 
+
+where $y$ is insurance charges;\
+$x_{age}$ is the individual's age;\
+$x_{bmi}$ is the body mass index;\
+$x_{child}$ is a dummy variable. $x_{child}=1$ is have children; $x_{child}=0$ is no children;\
+$x_{smoker}$ is a dummy variable. $x_{smoker}=1$ is smoker; $x_{smoker}=0$ is non-smoker;\
+
+## Interpretation
+
+For families non-smokers the model is:\
+$$
+\hat{y}=27770-42.73x_{age}+3.853x_{age}^2-2788x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3+1490x_{child}
+$$
+which is\
+$$
+\hat{y}=\begin{cases} 29260-42.73x_{age}+3.853x_{age}^2-2788x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3 & \text{,with child} \\
+27770-42.73x_{age}+3.853x_{age}^2-2788x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3 & \text{,without child} \end{cases}
+$$
+
+The insurance charges (y) vary with age ($x_{age}$). Both linear ($x_{age}$) and quadratic ($x_{age}^2$) terms are included in the model, capturing a nonlinear relationship. Initially, the charges decrease slightly with linear coefficient $\beta_{age}=-42.73$, but they begin to increase more steeply for older individuals as the quadratic coefficient $\beta_{age^2}=3.853$, reflecting the higher medical risks associated with aging.
+
+The insurance charges (y) change with BMI ($x_{bmi}$) in a nonlinear pattern, as captured by the linear ($x_{bmi}$), quadratic ($x_{bmi}^2$), and cubic ($x_{bmi}^3$) terms in the model. The negative linear coefficient $\beta_{bmi}=-2788$ suggests that charges decrease slightly at lower BMI levels. However, the positive quadratic coefficient $\beta_{bmi^2}=97.78$) reflects an upward trend in charges as BMI increases. The small negative cubic coefficient ($\beta_{bmi^3}=-1.093$) further moderates this increase at extremely high BMI levels, reflecting the complex relationship between BMI and medical costs. This pattern aligns with the understanding that both underweight and overweight individuals are at greater health risks, leading to higher insurance charges.
+
+The insurance charges (y) vary about without or with children ($x_{child}$). The average insurance charge is 1490 higher with children than without children, when other variables are constant. This indicates that having children has a positive effect on insurance charges.
+
+For families with smokers the model is:\
+$$
+\hat{y}=27770-20320-42.73x_{age}+3.853x_{age}^2+(1439-2788)x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3+1490x_{child}
+$$
+which is\
+$$
+\hat{y}=\begin{cases} 8940+1490-42.73x_{age}+3.853x_{age}^2-1349x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3 & \text{,with child} \\
+7450-42.73x_{age}+3.853x_{age}^2-1349x_{bmi}+97.78x_{bmi}^2-1.093x_{bmi}^3 & \text{,without child} \end{cases}
+$$
+
+The relationship and coefficient of age variable $x_{age}$ between smoking and non-smoking do not change. Both linear ($x_{age}$) and quadratic ($x_{age}^2$) terms are included in the model, capturing a nonlinear relationship. the charges decrease slightly with linear coefficient $\beta_{age}=-42.7318$, but they begin to increase more steeply for older individuals as the quadratic coefficient $\beta_{age^2}=3.8525$.
+
+The relationship of bmi variable $x_{bmi}$ between smoking and non-smoking do not change. But part of the coefficient has changed. The negative linear coefficient increase to$\beta_{bmi}=-1349$ suggests that charges decrease  more slightly at lower BMI levels than without smoker. However, the positive quadratic coefficient $\beta_{bmi^2}=97.78$) reflects an upward trend in charges as BMI increases. The small negative cubic coefficient ($\beta_{bmi^3}=-1.093$) further moderates this increase at extremely high BMI levels. 
+
+The insurance charges (y) vary about without or with children ($x_{child}$). The average insurance charge is still 1490 higher with children than without children, when other variables are constant.
+
+Smoking and non-smoking do not change the relationship and coefficients between age $x_{age}$, child $x_{child}$ variables and insurance charges. But it will change the intercept and the linear coefficient of bmi. The intercept is reduced and the coefficient on bmi is increased. 
+
