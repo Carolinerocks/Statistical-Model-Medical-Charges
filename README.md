@@ -1,4 +1,4 @@
-# Statistical_Model_Medical_Charges
+# Statistical Model - Medical Charges
 
 **1. Overview**  
 
